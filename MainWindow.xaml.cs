@@ -20,6 +20,7 @@ namespace TaskbarHider
     {
         private static bool loopRun = true;
         private static readonly string[] gameNames = ["cs2", "VALORANT-Win64-Shipping"];
+        private static nint? gameHwnd = null;
 
         [DllImport("user32.dll")]
         private static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, [MarshalAs(UnmanagedType.Bool)] bool bRepaint);
@@ -49,20 +50,20 @@ namespace TaskbarHider
 
             // Context menu for the tray icon
             ContextMenuStrip trayContextMenu = new();
+            ToolStripMenuItem refreshItem = new("Refresh");
             ToolStripMenuItem resizeItem = new("Resize");
             ToolStripMenuItem exitItem = new("Exit");
 
+            refreshItem.Click += (sender, args) =>
+            {
+                gameHwnd = null;
+            };
+
             resizeItem.Click += (sender, args) =>
             {
-                foreach (string game in gameNames)
+                if (gameHwnd != null)
                 {
-                    Process[] processList = Process.GetProcessesByName(game);
-                    Process? gameProcess = processList.Length > 0 ? processList[0] : null;
-                    if (gameProcess != null)
-                    {
-                        MoveWindow(gameProcess.MainWindowHandle, 1272, -31, 2576, 1478, true);
-                        break;
-                    }
+                    MoveWindow((nint)gameHwnd, 1272, -31, 2576, 1478, true);
                 }
             };
 
@@ -74,6 +75,7 @@ namespace TaskbarHider
                 Application.Current.Shutdown();
             };
 
+            trayContextMenu.Items.Add(refreshItem);
             trayContextMenu.Items.Add(resizeItem);
             trayContextMenu.Items.Add(exitItem);
 
@@ -83,12 +85,7 @@ namespace TaskbarHider
                 Icon = myIcon,
                 Visible = true,
                 Text = "TaskbarHider",
-            };
-
-            // Show the context menu on click
-            systemTray.Click += (sender, args) =>
-            {
-                trayContextMenu.Show(System.Windows.Forms.Cursor.Position.X, System.Windows.Forms.Cursor.Position.Y);
+                ContextMenuStrip = trayContextMenu
             };
             ProcessWatcher();
         }
@@ -101,19 +98,29 @@ namespace TaskbarHider
             while (loopRun)
             {
                 await Task.Delay(10);
-                nint? gameHwnd = null;
+                if (gameHwnd != null) goto Check;
 
                 // Loop over and check for the running processes
-                Parallel.ForEach(gameNames, game =>
+                foreach (string game in gameNames)
                 {
                     Process[] processList = Process.GetProcessesByName(game);
                     Process? gameProcess = processList.Length > 0 ? processList[0] : null;
                     if (gameProcess != null)
                     {
+                        // Get main window handle after process is fully launched
+                        await Task.Delay(TimeSpan.FromSeconds(5));
                         gameHwnd = gameProcess.MainWindowHandle;
+                        gameProcess.EnableRaisingEvents = true;
+                        gameProcess.Exited += (sender, e) =>
+                        {
+                            gameHwnd = null;
+                        };
+                        break;
                     }
-                });
+                }
 
+            // Skip to hide/show logic if we already have a process
+            Check:
                 bool gameIsForeground = GetForegroundWindow() == gameHwnd;
                 if (!Taskbar.IS_HIDDEN && gameIsForeground)
                 {
