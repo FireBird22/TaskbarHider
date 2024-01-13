@@ -19,8 +19,8 @@ namespace TaskbarHider
     public partial class MainWindow : Window
     {
         private static bool loopRun = true;
-        private static readonly string[] gameNames = ["cs2", "VALORANT-Win64-Shipping"];
-        private static nint? gameHwnd = null;
+        private static readonly string[] gameNames = ["cs2", "VALORANT-Win64-Shipping", "cod"];
+        private static Process? gameProcess = null;
 
         [DllImport("user32.dll")]
         private static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, [MarshalAs(UnmanagedType.Bool)] bool bRepaint);
@@ -56,14 +56,14 @@ namespace TaskbarHider
 
             refreshItem.Click += (sender, args) =>
             {
-                gameHwnd = null;
+                gameProcess = null;
             };
 
             resizeItem.Click += (sender, args) =>
             {
-                if (gameHwnd != null)
+                if (gameProcess != null)
                 {
-                    MoveWindow((nint)gameHwnd, 1272, -31, 2576, 1478, true);
+                    MoveWindow(gameProcess.MainWindowHandle, 1272, -31, 2576, 1478, true);
                 }
             };
 
@@ -98,22 +98,21 @@ namespace TaskbarHider
             while (loopRun)
             {
                 await Task.Delay(10);
-                if (gameHwnd != null) goto Check;
+                if (gameProcess != null) goto Check;
 
                 // Loop over and check for the running processes
                 foreach (string game in gameNames)
                 {
                     Process[] processList = Process.GetProcessesByName(game);
-                    Process? gameProcess = processList.Length > 0 ? processList[0] : null;
-                    if (gameProcess != null)
+                    Process? currProcess = processList.Length > 0 ? processList[0] : null;
+                    if (currProcess != null)
                     {
                         // Get main window handle after process is fully launched
-                        await Task.Delay(TimeSpan.FromSeconds(5));
-                        gameHwnd = gameProcess.MainWindowHandle;
-                        gameProcess.EnableRaisingEvents = true;
-                        gameProcess.Exited += (sender, e) =>
+                        gameProcess = currProcess;
+                        currProcess.EnableRaisingEvents = true;
+                        currProcess.Exited += (sender, e) =>
                         {
-                            gameHwnd = null;
+                            gameProcess = null;
                         };
                         break;
                     }
@@ -121,16 +120,20 @@ namespace TaskbarHider
 
             // Skip to hide/show logic if we already have a process
             Check:
-                bool gameIsForeground = GetForegroundWindow() == gameHwnd;
-                if (!Taskbar.IS_HIDDEN && gameIsForeground)
+                try
                 {
-                    Taskbar.Hide();
-                }
+                    bool gameIsForeground = GetForegroundWindow() == gameProcess!.MainWindowHandle;
+                    if (!Taskbar.IS_HIDDEN && gameIsForeground)
+                    {
+                        Taskbar.Hide();
+                    }
 
-                if (Taskbar.IS_HIDDEN && !gameIsForeground)
-                {
-                    Taskbar.Show();
+                    if (Taskbar.IS_HIDDEN && !gameIsForeground)
+                    {
+                        Taskbar.Show();
+                    }
                 }
+                catch { }
             }
         }
     }
