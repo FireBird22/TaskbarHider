@@ -31,6 +31,9 @@ namespace TaskbarHider
         public MainWindow()
         {
             InitializeComponent();
+            AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(HandleUnCaughtException);
+            Application.Current.Dispatcher.UnhandledException += OnDispatcherUnhandledException;
+            Dispatcher.UnhandledException += OnDispatcherUnhandledException;
 
             // Register to run on windows startup
             RegistryKey? startUpKey = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
@@ -135,6 +138,18 @@ namespace TaskbarHider
                 }
                 catch { }
             }
+        }
+
+        private void HandleUnCaughtException(object sender, UnhandledExceptionEventArgs e)
+        {
+            System.Windows.MessageBox.Show(e.ExceptionObject.ToString());
+            //Environment.Exit(0);
+        }
+
+        private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        {
+            System.Windows.MessageBox.Show(e.Exception.Message + "\n" + e.Exception.StackTrace);
+            //Environment.Exit(0);
         }
     }
 }
