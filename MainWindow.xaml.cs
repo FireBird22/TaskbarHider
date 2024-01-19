@@ -19,7 +19,7 @@ namespace TaskbarHider
     public partial class MainWindow : Window
     {
         private static bool loopRun = true;
-        private static readonly string[] gameNames = ["cs2", "VALORANT-Win64-Shipping", "cod"];
+        private static readonly string[] gameNames = ["cs2", "VALORANT-Win64-Shipping", "cod", "SkyrimSE"];
         private static Process? gameProcess = null;
 
         [DllImport("user32.dll")]
@@ -64,9 +64,18 @@ namespace TaskbarHider
 
             resizeItem.Click += (sender, args) =>
             {
-                if (gameProcess != null)
+                if (gameProcess == null)
+                {
+                    return;
+                }
+
+                if (gameProcess.ProcessName == "VALORANT-Win64-Shipping")
                 {
                     MoveWindow(gameProcess.MainWindowHandle, 1272, -31, 2576, 1478, true);
+                }
+                else
+                {
+                    MoveWindow(gameProcess.MainWindowHandle, 1272, 0, 2560, 1440, true);
                 }
             };
 
@@ -111,13 +120,17 @@ namespace TaskbarHider
                     if (currProcess != null)
                     {
                         // Get main window handle after process is fully launched
-                        gameProcess = currProcess;
-                        currProcess.EnableRaisingEvents = true;
-                        currProcess.Exited += (sender, e) =>
+                        try
                         {
-                            gameProcess = null;
-                        };
-                        break;
+                            gameProcess = currProcess;
+                            currProcess.EnableRaisingEvents = true;
+                            currProcess.Exited += (sender, e) =>
+                            {
+                                gameProcess = null;
+                            };
+                            break;
+                        }
+                        catch { }
                     }
                 }
 
