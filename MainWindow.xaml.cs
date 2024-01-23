@@ -1,4 +1,5 @@
-﻿using Microsoft.Win32;
+﻿using Microsoft.Toolkit.Uwp.Notifications;
+using Microsoft.Win32;
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -7,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Forms;
+using Windows.UI.Notifications;
 using Application = System.Windows.Application;
 
 namespace TaskbarHider
@@ -19,7 +21,7 @@ namespace TaskbarHider
     public partial class MainWindow : Window
     {
         private static bool loopRun = true;
-        private static readonly string[] gameNames = ["cs2", "VALORANT-Win64-Shipping", "cod", "SkyrimSE"];
+        private static string[] gameNames = [];
         private static Process? gameProcess = null;
 
         [DllImport("user32.dll")]
@@ -34,12 +36,15 @@ namespace TaskbarHider
             AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(HandleUnCaughtException);
             Application.Current.Dispatcher.UnhandledException += OnDispatcherUnhandledException;
             Dispatcher.UnhandledException += OnDispatcherUnhandledException;
+            string name_files = @$"{AppContext.BaseDirectory}\process_names.txt";
+            FileStream fs = new(name_files, FileMode.OpenOrCreate); fs.Close();
+            gameNames = File.ReadAllLines(name_files);
 
             // Register to run on windows startup
             RegistryKey? startUpKey = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
             if (startUpKey != null)
             {
-                String? PATH = System.Environment.ProcessPath;
+                string? PATH = Environment.ProcessPath;
                 if (PATH != null)
                 {
                     startUpKey.SetValue("TaskbarHider", PATH);
@@ -53,21 +58,37 @@ namespace TaskbarHider
 
             // Context menu for the tray icon
             ContextMenuStrip trayContextMenu = new();
+            ToolStripMenuItem editProcessesItem = new("Edit Processes");
             ToolStripMenuItem refreshItem = new("Refresh");
             ToolStripMenuItem resizeItem = new("Resize");
             ToolStripMenuItem exitItem = new("Exit");
 
+            // Tray menu function for editProcess
+            editProcessesItem.Click += (sender, args) =>
+            {
+                Process? editor = Process.Start(new ProcessStartInfo()
+                {
+                    FileName = name_files,
+                    UseShellExecute = true,
+                });
+                if (editor == null) return;
+                ShowToast("Processes Editor", "Waiting for editor to exit.");
+                editor.WaitForExit();
+                gameNames = File.ReadAllLines(name_files);
+                ShowToast("Processes Editor", "Successfully update process list");
+            };
+
+            // Tray menu function for refresh
             refreshItem.Click += (sender, args) =>
             {
                 gameProcess = null;
+                ShowToast("Refreshed", "Looking for new process");
             };
 
+            // Tray menu function for resize
             resizeItem.Click += (sender, args) =>
             {
-                if (gameProcess == null)
-                {
-                    return;
-                }
+                if (gameProcess == null) return;
 
                 if (gameProcess.ProcessName == "VALORANT-Win64-Shipping")
                 {
@@ -75,10 +96,11 @@ namespace TaskbarHider
                 }
                 else
                 {
-                    MoveWindow(gameProcess.MainWindowHandle, 1272, 0, 2560, 1440, true);
+                    MoveWindow(gameProcess.MainWindowHandle, 1280, 0, 2560, 1440, true);
                 }
             };
 
+            // Tray menu function for exit
             exitItem.Click += async (sender, args) =>
             {
                 loopRun = false;
@@ -87,6 +109,8 @@ namespace TaskbarHider
                 Application.Current.Shutdown();
             };
 
+            // Add items to the context menu
+            trayContextMenu.Items.Add(editProcessesItem);
             trayContextMenu.Items.Add(refreshItem);
             trayContextMenu.Items.Add(resizeItem);
             trayContextMenu.Items.Add(exitItem);
@@ -126,8 +150,10 @@ namespace TaskbarHider
                             currProcess.EnableRaisingEvents = true;
                             currProcess.Exited += (sender, e) =>
                             {
+                                ShowToast("Process Exited", $"{game} with PID {gameProcess.Id}");
                                 gameProcess = null;
                             };
+                            ShowToast("Process Started", $"{game} with PID {gameProcess.Id}");
                             break;
                         }
                         catch { }
@@ -136,33 +162,35 @@ namespace TaskbarHider
 
             // Skip to hide/show logic if we already have a process
             Check:
-                try
-                {
-                    bool gameIsForeground = GetForegroundWindow() == gameProcess!.MainWindowHandle;
-                    if (!Taskbar.IS_HIDDEN && gameIsForeground)
-                    {
-                        Taskbar.Hide();
-                    }
+                if (gameProcess == null) continue;
 
-                    if (Taskbar.IS_HIDDEN && !gameIsForeground)
-                    {
-                        Taskbar.Show();
-                    }
-                }
-                catch { }
+                bool gameIsForeground = GetForegroundWindow() == gameProcess.MainWindowHandle;
+                if (!Taskbar.IS_HIDDEN && gameIsForeground) Taskbar.Hide();
+                if (Taskbar.IS_HIDDEN && !gameIsForeground) Taskbar.Show();
             }
+        }
+
+        private static async void ShowToast(string title, string message)
+        {
+            ToastContent toast = new ToastContentBuilder()
+                                .AddHeader(Guid.NewGuid().ToString(), title, "")
+                                .SetToastDuration(ToastDuration.Short)
+                                .AddText(message)
+                                .GetToastContent();
+
+            ToastNotification toastNotification = new(toast.GetXml());
+            toastNotification.ExpirationTime = DateTimeOffset.Now.AddSeconds(5);
+            ToastNotificationManagerCompat.CreateToastNotifier().Show(toastNotification);
         }
 
         private void HandleUnCaughtException(object sender, UnhandledExceptionEventArgs e)
         {
             System.Windows.MessageBox.Show(e.ExceptionObject.ToString());
-            //Environment.Exit(0);
         }
 
         private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
             System.Windows.MessageBox.Show(e.Exception.Message + "\n" + e.Exception.StackTrace);
-            //Environment.Exit(0);
         }
     }
 }

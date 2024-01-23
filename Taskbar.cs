@@ -7,13 +7,13 @@
     {
         internal static bool IS_HIDDEN = false;
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int FindWindow(string className, string windowText);
 
         [DllImport("user32.dll")]
         private static extern int ShowWindow(int hwnd, int command);
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         public static extern int FindWindowEx(int parentHandle, int childAfter, string className, int windowTitle);
 
         [DllImport("user32.dll")]
@@ -43,15 +43,15 @@
         public static void Show()
         {
             IS_HIDDEN = false;
-            ShowWindow(Handle, SW_SHOW);
-            ShowWindow(HandleOfStartButton, SW_SHOW);
+            _ = ShowWindow(Handle, SW_SHOW);
+            _ = ShowWindow(HandleOfStartButton, SW_SHOW);
         }
 
         public static void Hide()
         {
             IS_HIDDEN = true;
-            ShowWindow(Handle, SW_HIDE);
-            ShowWindow(HandleOfStartButton, SW_HIDE);
+            _ = ShowWindow(Handle, SW_HIDE);
+            _ = ShowWindow(HandleOfStartButton, SW_HIDE);
         }
     }
 }
