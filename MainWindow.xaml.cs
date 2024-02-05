@@ -1,6 +1,7 @@
 ﻿using Microsoft.Toolkit.Uwp.Notifications;
 using Microsoft.Win32;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -20,9 +21,12 @@ namespace TaskbarHider
 
     public partial class MainWindow : Window
     {
-        private static bool loopRun = true;
-        private static string[] gameNames = [];
-        private static Process? gameProcess = null;
+        private static readonly string ProcessNamesFile = @$"{AppContext.BaseDirectory}\process_names.txt";
+        private static readonly List<string> ProcessNamesList = [];
+        private static readonly List<string> ProcessNamesListAltPos = [];
+
+        private static Process? currentGameInstance = null;
+        private static bool watcherRunning = true;
 
         [DllImport("user32.dll")]
         private static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, [MarshalAs(UnmanagedType.Bool)] bool bRepaint);
@@ -32,13 +36,13 @@ namespace TaskbarHider
 
         public MainWindow()
         {
+            // Init stuff
             InitializeComponent();
             AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(HandleUnCaughtException);
             Application.Current.Dispatcher.UnhandledException += OnDispatcherUnhandledException;
             Dispatcher.UnhandledException += OnDispatcherUnhandledException;
-            string name_files = @$"{AppContext.BaseDirectory}\process_names.txt";
-            FileStream fs = new(name_files, FileMode.OpenOrCreate); fs.Close();
-            gameNames = File.ReadAllLines(name_files);
+            FileStream fs = new(ProcessNamesFile, FileMode.OpenOrCreate); fs.Close();
+            ReadProcessNames();
 
             // Register to run on windows startup
             RegistryKey? startUpKey = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
@@ -68,42 +72,41 @@ namespace TaskbarHider
             {
                 Process? editor = Process.Start(new ProcessStartInfo()
                 {
-                    FileName = name_files,
+                    FileName = ProcessNamesFile,
                     UseShellExecute = true,
                 });
                 if (editor == null) return;
                 ShowToast("Processes Editor", "Waiting for editor to exit.");
                 editor.WaitForExit();
-                gameNames = File.ReadAllLines(name_files);
-                ShowToast("Processes Editor", "Successfully update process list");
+                ReadProcessNames();
             };
 
             // Tray menu function for refresh
             refreshItem.Click += (sender, args) =>
             {
-                gameProcess = null;
+                currentGameInstance = null;
                 ShowToast("Refreshed", "Looking for new process");
             };
 
             // Tray menu function for resize
             resizeItem.Click += (sender, args) =>
             {
-                if (gameProcess == null) return;
+                if (currentGameInstance == null) return;
 
-                if (gameProcess.ProcessName == "VALORANT-Win64-Shipping")
+                if (ProcessNamesListAltPos.Contains(currentGameInstance.ProcessName))
                 {
-                    MoveWindow(gameProcess.MainWindowHandle, 1272, -31, 2576, 1478, true);
+                    MoveWindow(currentGameInstance.MainWindowHandle, 1272, -31, 2576, 1478, true);
                 }
                 else
                 {
-                    MoveWindow(gameProcess.MainWindowHandle, 1280, 0, 2560, 1440, true);
+                    MoveWindow(currentGameInstance.MainWindowHandle, 1280, 0, 2560, 1440, true);
                 }
             };
 
             // Tray menu function for exit
             exitItem.Click += async (sender, args) =>
             {
-                loopRun = false;
+                watcherRunning = false;
                 await Task.Delay(200);
                 Taskbar.Show();
                 Application.Current.Shutdown();
@@ -131,13 +134,13 @@ namespace TaskbarHider
             // Set default taskbar state to show
             Taskbar.Show();
 
-            while (loopRun)
+            while (watcherRunning)
             {
                 await Task.Delay(10);
-                if (gameProcess != null) goto Check;
+                if (currentGameInstance != null) goto Check;
 
                 // Loop over and check for the running processes
-                foreach (string game in gameNames)
+                foreach (string game in ProcessNamesList)
                 {
                     Process[] processList = Process.GetProcessesByName(game);
                     Process? currProcess = processList.Length > 0 ? processList[0] : null;
@@ -146,14 +149,14 @@ namespace TaskbarHider
                         // Get main window handle after process is fully launched
                         try
                         {
-                            gameProcess = currProcess;
+                            currentGameInstance = currProcess;
                             currProcess.EnableRaisingEvents = true;
                             currProcess.Exited += (sender, e) =>
                             {
-                                ShowToast("Process Exited", $"{game} with PID {gameProcess.Id}");
-                                gameProcess = null;
+                                ShowToast("Process Exited", $"{game} with PID {currentGameInstance.Id}");
+                                currentGameInstance = null;
                             };
-                            ShowToast("Process Started", $"{game} with PID {gameProcess.Id}");
+                            ShowToast("Process Started", $"{game} with PID {currentGameInstance.Id}");
                             break;
                         }
                         catch { }
@@ -162,15 +165,31 @@ namespace TaskbarHider
 
             // Skip to hide/show logic if we already have a process
             Check:
-                if (gameProcess == null) continue;
+                if (currentGameInstance == null) continue;
 
-                bool gameIsForeground = GetForegroundWindow() == gameProcess.MainWindowHandle;
+                bool gameIsForeground = GetForegroundWindow() == currentGameInstance.MainWindowHandle;
                 if (!Taskbar.IS_HIDDEN && gameIsForeground) Taskbar.Hide();
                 if (Taskbar.IS_HIDDEN && !gameIsForeground) Taskbar.Show();
             }
         }
 
-        private static async void ShowToast(string title, string message)
+        private static void ReadProcessNames()
+        {
+            string[] names = File.ReadAllLines(ProcessNamesFile);
+            foreach (string name in names)
+            {
+                string temp = name;
+                if (temp.Contains("****"))
+                {
+                    temp = temp.Replace("****", string.Empty);
+                    ProcessNamesListAltPos.Add(temp);
+                }
+                ProcessNamesList.Add(temp);
+            }
+            ShowToast("Processes Editor", "Successfully update process list");
+        }
+
+        private static void ShowToast(string title, string message)
         {
             ToastContent toast = new ToastContentBuilder()
                                 .AddHeader(Guid.NewGuid().ToString(), title, "")

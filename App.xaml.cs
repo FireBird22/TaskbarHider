@@ -8,5 +8,4 @@ namespace TaskbarHider
     public partial class App : Application
     {
     }
-
 }
