@@ -1,24 +1,19 @@
 ﻿using Microsoft.Toolkit.Uwp.Notifications;
-using Microsoft.Win32;
+using Microsoft.Win32.TaskScheduler;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Forms;
 using Windows.UI.Notifications;
 using Application = System.Windows.Application;
+using Task = System.Threading.Tasks.Task;
 
 namespace TaskbarHider
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
-    ///
-
     public partial class MainWindow : Window
     {
         private static readonly string ProcessNamesFile = @$"{AppContext.BaseDirectory}\process_names.txt";
@@ -44,16 +39,16 @@ namespace TaskbarHider
             FileStream fs = new(ProcessNamesFile, FileMode.OpenOrCreate); fs.Close();
             ReadProcessNames();
 
-            // Register to run on windows startup
-            RegistryKey? startUpKey = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-            if (startUpKey != null)
+            try
             {
-                string? PATH = Environment.ProcessPath;
-                if (PATH != null)
-                {
-                    startUpKey.SetValue("TaskbarHider", PATH);
-                }
+                TaskService ts = new();
+                TaskDefinition startupTask = ts.NewTask();
+                startupTask.Triggers.Add(new LogonTrigger());
+                startupTask.Actions.Add(new ExecAction(Environment.ProcessPath, null, null));
+                startupTask.Principal.RunLevel = TaskRunLevel.Highest;
+                ts.RootFolder.RegisterTaskDefinition("TaskbarHider", startupTask);
             }
+            catch (Exception _ex) { };
 
             // Get the icon from resource for the tray icon
             Stream iconStream = Application.GetResourceStream(new Uri("pack://application:,,,/TaskbarHider;component/icon.ico")).Stream;
@@ -127,6 +122,7 @@ namespace TaskbarHider
                 ContextMenuStrip = trayContextMenu
             };
             ProcessWatcher();
+            ExitGSkill();
         }
 
         private static async void ProcessWatcher()
@@ -146,6 +142,7 @@ namespace TaskbarHider
                     Process? currProcess = processList.Length > 0 ? processList[0] : null;
                     if (currProcess != null)
                     {
+                        Debug.WriteLine(currProcess.ProcessName);
                         // Get main window handle after process is fully launched
                         try
                         {
@@ -202,14 +199,40 @@ namespace TaskbarHider
             ToastNotificationManagerCompat.CreateToastNotifier().Show(toastNotification);
         }
 
-        private void HandleUnCaughtException(object sender, UnhandledExceptionEventArgs e)
+        private static void HandleUnCaughtException(object sender, UnhandledExceptionEventArgs e)
         {
             System.Windows.MessageBox.Show(e.ExceptionObject.ToString());
         }
 
-        private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        private static void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
             System.Windows.MessageBox.Show(e.Exception.Message + "\n" + e.Exception.StackTrace);
+        }
+
+        private static async void ExitGSkill()
+        {
+            string script = $@"
+                Disable-NetAdapter -Name 'Ethernet' -Confirm:$false
+                Start-sleep 2
+                Enable-NetAdapter -Name 'Ethernet' -Confirm:$false
+            ";
+
+            Process task = new();
+            task.StartInfo.FileName = "powershell.exe";
+            task.StartInfo.Arguments = script;
+            task.StartInfo.CreateNoWindow = false;
+            task.Start();
+
+            await Task.Delay(1000 * 10);
+            Process[] processes = Process.GetProcessesByName("hid");
+            for (int i = 0; i < processes.Length; i++)
+            {
+                Process p = processes[i];
+                if (p.MainModule.FileVersionInfo.FileDescription.Contains("Trident Z"))
+                {
+                    p.Kill();
+                }
+            }
         }
     }
 }
