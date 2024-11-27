@@ -17,8 +17,8 @@ namespace TaskbarHider
     public partial class MainWindow : Window
     {
         private static readonly string ProcessNamesFile = @$"{AppContext.BaseDirectory}\process_names.txt";
-        private static readonly List<string> ProcessNamesList = [];
-        private static readonly List<string> ProcessNamesListAltPos = [];
+        private static List<string> ProcessNamesList = [];
+        private static List<string> ProcessNamesListAltPos = [];
 
         private static Process? currentGameInstance = null;
         private static bool watcherRunning = true;
@@ -123,6 +123,7 @@ namespace TaskbarHider
             };
             ProcessWatcher();
             ExitGSkill();
+            HandleEthernet();
         }
 
         private static async void ProcessWatcher()
@@ -173,6 +174,8 @@ namespace TaskbarHider
         private static void ReadProcessNames()
         {
             string[] names = File.ReadAllLines(ProcessNamesFile);
+            ProcessNamesList = [];
+            ProcessNamesListAltPos = [];
             foreach (string name in names)
             {
                 string temp = name;
@@ -195,7 +198,7 @@ namespace TaskbarHider
                                 .GetToastContent();
 
             ToastNotification toastNotification = new(toast.GetXml());
-            toastNotification.ExpirationTime = DateTimeOffset.Now.AddSeconds(5);
+            toastNotification.ExpirationTime = DateTimeOffset.Now.AddSeconds(2);
             ToastNotificationManagerCompat.CreateToastNotifier().Show(toastNotification);
         }
 
@@ -209,8 +212,11 @@ namespace TaskbarHider
             System.Windows.MessageBox.Show(e.Exception.Message + "\n" + e.Exception.StackTrace);
         }
 
-        private static async void ExitGSkill()
+        private static async void HandleEthernet()
         {
+            MessageBoxResult result = System.Windows.MessageBox.Show("Reset adapter?", "Taskbar hider", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+            if (result != MessageBoxResult.Yes) return;
+            await Task.Delay(1000 * 30);
             string script = $@"
                 Disable-NetAdapter -Name 'Ethernet' -Confirm:$false
                 Start-sleep 2
@@ -222,8 +228,11 @@ namespace TaskbarHider
             task.StartInfo.Arguments = script;
             task.StartInfo.CreateNoWindow = false;
             task.Start();
+        }
 
-            await Task.Delay(1000 * 10);
+        private static async void ExitGSkill()
+        {
+            await Task.Delay(1000 * 40);
             Process[] processes = Process.GetProcessesByName("hid");
             for (int i = 0; i < processes.Length; i++)
             {
