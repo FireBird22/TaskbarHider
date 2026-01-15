@@ -1,5 +1,6 @@
 ﻿namespace TaskbarHider
 {
+    using System;
     using System.Runtime.InteropServices;
 
     // Yeeted from: https://stackoverflow.com/questions/19022789/hide-taskbar-in-winforms-application
@@ -21,6 +22,50 @@
 
         private const int SW_HIDE = 0;
         private const int SW_SHOW = 1;
+
+        private const int ABM_GETSTATE = 0x00000004;
+        private const int ABM_SETSTATE = 0x0000000A;
+
+        private const int ABS_AUTOHIDE = 0x0000001;
+        private const int ABS_ALWAYSONTOP = 0x0000002;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct APPBARDATA
+        {
+            public int cbSize;
+            public IntPtr hWnd;
+            public uint uCallbackMessage;
+            public uint uEdge;
+            public RECT rc;
+            public int lParam;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int left, top, right, bottom;
+        }
+
+        [DllImport("shell32.dll")]
+        private static extern int SHAppBarMessage(int dwMessage, ref APPBARDATA pData);
+
+        public static void SetAutoHide(bool enable)
+        {
+            APPBARDATA abd = new APPBARDATA
+            {
+                cbSize = Marshal.SizeOf<APPBARDATA>()
+            };
+
+            int state = SHAppBarMessage(ABM_GETSTATE, ref abd);
+
+            if (enable)
+                state |= ABS_AUTOHIDE;
+            else
+                state &= ~ABS_AUTOHIDE;
+
+            abd.lParam = state;
+            SHAppBarMessage(ABM_SETSTATE, ref abd);
+        }
 
         protected static int Handle
         {

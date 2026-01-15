@@ -17,11 +17,12 @@ namespace TaskbarHider
     public partial class MainWindow : Window
     {
         private static readonly string ProcessNamesFile = @$"{AppContext.BaseDirectory}\process_names.txt";
-        private static List<string> ProcessNamesList = [];
-        private static List<string> ProcessNamesListAltPos = [];
+        private static HashSet<string> ProcessNamesList = new(StringComparer.Ordinal);
+        private static HashSet<string> ProcessNamesListAltPos = new(StringComparer.Ordinal);
+        private static HashSet<string> ProcessNamesListAutoHide = new(StringComparer.Ordinal);
 
-        private static Process? currentGameInstance = null;
         private static bool watcherRunning = true;
+        private static Process? currentGameInstance = null;
 
         [DllImport("user32.dll")]
         private static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, [MarshalAs(UnmanagedType.Bool)] bool bRepaint);
@@ -133,7 +134,7 @@ namespace TaskbarHider
 
             while (watcherRunning)
             {
-                await Task.Delay(10);
+                await Task.Delay(200);
                 if (currentGameInstance != null) goto Check;
 
                 // Loop over and check for the running processes
@@ -147,12 +148,16 @@ namespace TaskbarHider
                         // Get main window handle after process is fully launched
                         try
                         {
+                            if( ProcessNamesListAutoHide.Contains(game))
+                                Taskbar.SetAutoHide(true);
                             currentGameInstance = currProcess;
                             currProcess.EnableRaisingEvents = true;
                             currProcess.Exited += (sender, e) =>
                             {
                                 ShowToast("Process Exited", $"{game} with PID {currentGameInstance.Id}");
                                 currentGameInstance = null;
+                                Taskbar.Show();
+                                Taskbar.SetAutoHide(false);
                             };
                             ShowToast("Process Started", $"{game} with PID {currentGameInstance.Id}");
                             break;
@@ -166,6 +171,7 @@ namespace TaskbarHider
                 if (currentGameInstance == null) continue;
 
                 bool gameIsForeground = GetForegroundWindow() == currentGameInstance.MainWindowHandle;
+
                 if (!Taskbar.IS_HIDDEN && gameIsForeground) Taskbar.Hide();
                 if (Taskbar.IS_HIDDEN && !gameIsForeground) Taskbar.Show();
             }
@@ -176,15 +182,21 @@ namespace TaskbarHider
             string[] names = File.ReadAllLines(ProcessNamesFile);
             ProcessNamesList = [];
             ProcessNamesListAltPos = [];
+            ProcessNamesListAutoHide = [];
             foreach (string name in names)
             {
                 string temp = name;
-                if (temp.Contains("****"))
-                {
-                    temp = temp.Replace("****", string.Empty);
-                    ProcessNamesListAltPos.Add(temp);
-                }
+                bool isAltPost = temp.Contains("**");
+                bool isAutoHide = temp.Contains("&&");
+                temp = temp.Replace("**", string.Empty);
+                temp = temp.Replace("&&", string.Empty);
                 ProcessNamesList.Add(temp);
+
+                if (isAltPost)
+                    ProcessNamesListAltPos.Add(temp);
+
+                if (isAutoHide)
+                    ProcessNamesListAutoHide.Add(temp);
             }
             ShowToast("Processes Editor", "Successfully update process list");
         }
