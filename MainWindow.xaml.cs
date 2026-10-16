@@ -77,6 +77,7 @@ namespace TaskbarHider
             // Run one-off tasks in background
             _ = ExitGSkillAsync();
             _ = HandleEthernetAsync();
+            _ = LianLi.TurnOffLedsAsync();
 
             // Hook into the system immediately
             InitializeSystemHook();
